@@ -2,6 +2,7 @@ setwd("~/Github/2015_SF_Crime_Classification/")
 setwd("C:/Users/dhadley/Documents/GitHub/2015_SF_Crime_Classification/")
 
 library(randomForest)
+set.seed(543)
 
 test <- read.csv("./test.csv")
 train <- read.csv("./train.csv")
@@ -32,8 +33,7 @@ train$Day<- as.matrix(as.numeric(substring(train$Dates, 9, 10)))
 
 
 #### Samples to test on ####
-trainSample <- droplevels(train[sample(nrow(train), 8000), ])
-testSample <- droplevels(test[sample(nrow(test), 8000), ])
+trainSample <- droplevels(train[sample(nrow(train), 80000), ])
 
 
 # Quick code to turn the predictions into submittable csv
@@ -42,3 +42,11 @@ testSample <- droplevels(test[sample(nrow(test), 8000), ])
 # wide <- spread(long, Var2, Freq)
 
 first_attempt <- randomForest(Category ~ DayOfWeek + PdDistrict + Hour + Month, data=trainSample, ntree=5000, importance=TRUE)
+
+cm <- data.frame(first_attempt["confusion"])
+
+predicted <- predict(object = first_attempt, newdata = test, type = "prob")
+final <- data.frame(Id = Sample$Id , predicted)
+colnames(final)  <- c("Id",levels(train$Category))
+
+write.csv(final,file = "dh_submission.csv",row.names = FALSE,quote = F)
