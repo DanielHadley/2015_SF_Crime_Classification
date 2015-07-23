@@ -3,12 +3,16 @@ setwd("C:/Users/dhadley/Documents/GitHub/2015_SF_Crime_Classification/")
 
 library(randomForest)
 library(dplyr)
+library(tidyr)
 set.seed(543)
 
 train <- read.csv("./train.csv")
 # sample <- read.csv("./sampleSubmission.csv")
 test <- read.csv("./test.csv")
 # Only load test when needed
+
+
+#### Processing data ####
 
 #I found the dates to be a bit messy in the file.
 #Comes with the job though.
@@ -44,26 +48,82 @@ train$Day<- as.matrix(as.numeric(substring(train$Dates, 9, 10)))
 clust <- test %>% select(X, Y)
 clust2 <- train %>% select(X, Y)
 
-clust <- merge(clust, clust2)
+clust <- dplyr::bind_rows(clust, clust2)
+rm(clust2)
+
+k <- kmeans(clust, 30)
 
 # Add cluster variable back to the data frame with the last n clusters
-# We use the last 'n' clusters because we will use those to train the model
-# And ultimately we will predict future clusters based on the last n clusters
-# n is specified in the for loop
 # I went with 30 because I suspect that will be enough for prediction
-c <- augment(clust, d) %>% select(.cluster)
+test$Cluster <- as.factor(k$cluster[1:884262]) 
+train$Cluster <- as.factor(k$cluster[884263:1762311])
 
-for(i in 1:30){
-  c[[paste('lag', i, sep="_")]] <- lag(c[[i]])
-}
-
-c$order <- d$order
-
-d <- merge(d, c, by='order')
+rm(k, clust)
 
 
 
-# #### First model ####
+#### Model 3.0 ####
+# This time we will move away from RF to see how well we do with frequencies from the given cluster
+mytable <- table(train$Category, train$Cluster)
+d <- data.frame(prop.table(mytable, 1))
+
+Crime_Frequencies <- d %>% 
+  spread(key = Var1, value = Freq) %>% 
+  rename(Cluster = Var2)
+
+final <- merge(test, Crime_Frequencies, by = "Cluster")
+
+finalFinal <- final[c(2,13:51)]
+finalFinal <- finalFinal[order(finalFinal$Id) , ]
+
+finalFinal$Id <- test$Id
+write.csv(finalFinal, file = "dh_submission_03.csv",row.names = FALSE,quote = F)
+
+# Result = 3.55121, moved 10 positions, 205 / 294
+
+
+
+
+#### Model 2.0 ####
+
+model2_0 <- randomForest(Category ~ PdDistrict + Hour, data=trainSample, ntree=5000, importance=TRUE)
+
+## Samples to test on ##
+trainSample <- droplevels(train[sample(nrow(train), 20000), ])
+
+model <- randomForest(Category ~ PdDistrict + Hour + Month + Cluster, data=trainSample, ntree=5000, importance=TRUE)
+
+cm <- data.frame(model["confusion"])
+varImpPlot(model)
+
+
+### Now predict ###
+# Load test in first and change the dates
+
+predicted <- predict(object = model, newdata = test, type = "prob")
+final <- data.frame(Id = test$Id , predicted)
+
+
+## Prepare for submission
+# Add the factors that were dropped back in
+final$TREA <- 0
+
+# Now reorder alphabetically
+final <- final[,order(names(final))]
+# And move ID back
+final <- final %>% select(Id, everything())
+
+# Add column names
+colnames(final)  <- c("Id",levels(train$Category))
+final$Id <- test$Id
+write.csv(final,file = "dh_submission_02.csv",row.names = FALSE,quote = F)
+
+# Result: 9.1, up 14 positions, 215 / 294
+
+
+
+
+# #### Model 1.0 ####
 #
 ### Samples to test on ##
 #trainSample <- droplevels(train[sample(nrow(train), 20000), ])
@@ -99,7 +159,7 @@ d <- merge(d, c, by='order')
 # 
 # # Add column names
 # colnames(final)  <- c("Id",levels(train$Category))
-# write.csv(final,file = "dh_submission.csv",row.names = FALSE,quote = F)
+# write.csv(final,file = "dh_submission_01.csv",row.names = FALSE,quote = F)
 # 
 # # Result: 14, 229 / 294
 # 
@@ -108,7 +168,7 @@ d <- merge(d, c, by='order')
 # fo <- final # final_optimized
 # fo[fo < 0.2] <- 0
 # fo$Id <- final$Id
-# write.csv(fo,file = "dh_submission_2.csv",row.names = FALSE,quote = F)
+# write.csv(fo,file = "dh_submission_01_2.csv",row.names = FALSE,quote = F)
 # 
 # # Result: 25, a serious decline
 # 
