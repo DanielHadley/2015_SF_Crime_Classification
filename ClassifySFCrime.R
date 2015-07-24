@@ -1,5 +1,6 @@
 setwd("~/Github/2015_SF_Crime_Classification/")
 setwd("C:/Users/dhadley/Documents/GitHub/2015_SF_Crime_Classification/")
+setwd("/home/rstudio/Dropbox/2015_Kaggle_SF/") #Amazon EC2
 
 library(randomForest)
 library(dplyr)
@@ -59,6 +60,31 @@ test$Cluster <- as.factor(k$cluster[1:884262])
 train$Cluster <- as.factor(k$cluster[884263:1762311])
 
 rm(k, clust)
+
+
+
+#### Model 4.0 ####
+# Set up for the amazon EC2 environment
+# Reducing the trees seemed to cut into performance more than the gains from training on all of the data
+model <- randomForest(Category ~ PdDistrict + Hour + Month + Cluster, data=train, ntree=300, importance=TRUE)
+
+cm <- data.frame(model["confusion"])
+varImpPlot(model)
+
+
+### Now predict ###
+# Load test in first and change the dates
+
+predicted <- predict(object = model, newdata = test, type = "prob")
+final <- data.frame(Id = test$Id , predicted)
+
+# Add column names
+colnames(final)  <- c("Id",levels(train$Category))
+final$Id <- test$Id
+write.csv(final,file = "dh_submission_04.csv",row.names = FALSE,quote = F)
+
+# Result: 9.53563, no improvement
+
 
 
 
