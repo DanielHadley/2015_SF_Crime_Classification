@@ -66,6 +66,54 @@ rm(k, clust)
 
 
 
+#### Model 14.0 - 15.0 ####
+# Same as 12, but we average instead of replacing the values
+# Cluster frequencies as priors: update with rf on individual categories
+train$"LARCENY.THEFT" <- as.factor(ifelse(train$Category == "LARCENY/THEFT", 1, 0))
+
+trainSample <- droplevels(train[sample(nrow(train), 200000), ])
+
+model <- randomForest(LARCENY.THEFT ~ Cluster + X + Y + DayOfWeek + Hour + Year, data=trainSample, ntree=1500, importance=TRUE, do.trace=100)
+
+
+### Now predict ###
+predicted <- predict(object = model, newdata = test, type = "prob")
+LARCENY.THEFT <- data.frame(Id = test$Id , predicted)
+
+
+# Now create priors and update them with the predicted values
+# Priors
+mytable <- table(train$Category, train$Cluster)
+d <- data.frame(prop.table(mytable, 2))
+
+Crime_Frequencies <- d %>% 
+  spread(key = Var1, value = Freq) %>% 
+  rename(Cluster = Var2)
+
+final <- merge(test, Crime_Frequencies, by = "Cluster")
+
+final <- final[c(2,13:51)]
+final <- final[order(final$Id) , ]
+
+# Put in the RF predictions
+LARCENY.THEFT$Prior <- final$`LARCENY/THEFT`
+LARCENY.THEFT$Avg <- rowMeans(LARCENY.THEFT[,3:4])
+final$`LARCENY/THEFT` <- LARCENY.THEFT$Avg
+
+final$Id <- test$Id
+
+
+write.csv(final, file = "dh_submission_14.csv",row.names = FALSE,quote = F)
+
+
+final$`LARCENY/THEFT` <- LARCENY.THEFT$X1
+
+write.csv(final, file = "dh_submission_15.csv",row.names = FALSE,quote = F)
+
+# Result: 2.57367 
+
+
+
 #### Model 13.0 ####
 # Same as 12, but we average instead of replacing the values
 # Cluster frequencies as priors: update with rf on individual categories
