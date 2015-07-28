@@ -66,6 +66,98 @@ rm(k, clust)
 
 
 
+#### Model 13.0 ####
+# Same as 12, but we average instead of replacing the values
+# Cluster frequencies as priors: update with rf on individual categories
+train$"LARCENY.THEFT" <- as.factor(ifelse(train$Category == "LARCENY/THEFT", 1, 0))
+
+trainSample <- droplevels(train[sample(nrow(train), 100000), ])
+
+model <- randomForest(LARCENY.THEFT ~ Cluster + X + Y + DayOfWeek + Hour + Year, data=trainSample, ntree=1000, importance=TRUE, do.trace=100)
+
+
+### Now predict ###
+predicted <- predict(object = model, newdata = test, type = "prob")
+LARCENY.THEFT <- data.frame(Id = test$Id , predicted)
+
+
+# Now create priors and update them with the predicted values
+# Priors
+mytable <- table(train$Category, train$Cluster)
+d <- data.frame(prop.table(mytable, 2))
+
+Crime_Frequencies <- d %>% 
+  spread(key = Var1, value = Freq) %>% 
+  rename(Cluster = Var2)
+
+final <- merge(test, Crime_Frequencies, by = "Cluster")
+
+final <- final[c(2,13:51)]
+final <- final[order(final$Id) , ]
+
+# Put in the RF predictions
+LARCENY.THEFT$Prior <- final$`LARCENY/THEFT`
+LARCENY.THEFT$Avg <- rowMeans(LARCENY.THEFT[,3:4])
+final$`LARCENY/THEFT` <- LARCENY.THEFT$Avg
+
+final$Id <- test$Id
+
+
+write.csv(final, file = "dh_submission_13.csv",row.names = FALSE,quote = F)
+
+
+# Result: 2.56310 You improved on your best score by 0.01288. You just moved up 13 positions on the leaderboard.
+
+
+
+
+#### Model 12.0 ####
+# Cluster frequencies as priors: update with rf on individual categories
+train$"LARCENY.THEFT" <- as.factor(ifelse(train$Category == "LARCENY/THEFT", 1, 0))
+
+trainSample <- droplevels(train[sample(nrow(train), 100000), ])
+
+model <- randomForest(LARCENY.THEFT ~ Cluster + X + Y + DayOfWeek + Hour + Year, data=trainSample, ntree=1000, importance=TRUE, do.trace=100)
+
+
+### Now predict ###
+predicted <- predict(object = model, newdata = test, type = "prob")
+LARCENY.THEFT <- data.frame(Id = test$Id , predicted)
+
+
+# Now create priors and update them with the predicted values
+# Priors
+mytable <- table(train$Category, train$Cluster)
+d <- data.frame(prop.table(mytable, 2))
+
+Crime_Frequencies <- d %>% 
+  spread(key = Var1, value = Freq) %>% 
+  rename(Cluster = Var2)
+
+final <- merge(test, Crime_Frequencies, by = "Cluster")
+
+final <- final[c(2,13:51)]
+final <- final[order(final$Id) , ]
+
+# Put in the RF predictions
+final$`LARCENY/THEFT` <- LARCENY.THEFT$X1
+
+final$Id <- test$Id
+
+# Now reorder alphabetically
+final <- final[,order(names(final))]
+# And move ID back
+final <- final %>% select(Id, everything())
+
+
+write.csv(final, file = "dh_submission_12.csv",row.names = FALSE,quote = F)
+
+
+# Result: 2.57598 You improved on your best score by 0.01012. You just moved up 22 positions on the leaderboard
+
+
+
+
 #### Model 11.0 ####
 # Single tree
 tree <- rpart(Category ~ X + Y + Cluster,
@@ -108,7 +200,6 @@ write.csv(final, file = "dh_submission_10.csv",row.names = FALSE,quote = F)
 
 
 
-
 #### Model 9.0 ####
 # Weird: it's different from the one on the scripts forum
 # This time we will move away from RF to see how well we do with frequencies from the district
@@ -129,7 +220,6 @@ write.csv(finalFinal, file = "dh_submission_09.csv",row.names = FALSE,quote = F)
 
 # Result = 3.59304 before I found an error in the table??
 # Probably more like score = 2.616
-
 
 
 
