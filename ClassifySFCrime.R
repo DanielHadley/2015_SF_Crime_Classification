@@ -45,7 +45,7 @@ train$Day<- as.matrix(as.numeric(substring(train$Dates, 9, 10)))
 #### Ok, let's try to engineer some geo-spatial and temporal features ####
 # After this we will put it in the cloud to train on all of the available data instead of the sample
 
-# K means
+# K means 30
 # This is how we group crimes on a map.
 # It may be more convenient to use reporting areas, but often those bisect a cluster
 clust <- test %>% select(X, Y)
@@ -62,6 +62,49 @@ test$Cluster <- as.factor(k$cluster[1:884262])
 train$Cluster <- as.factor(k$cluster[884263:1762311])
 
 rm(k, clust)
+
+
+
+
+#### Model 16.0  ####
+# Try to make super-priors
+
+# Add more K-means and average them
+# K means 40
+clust <- test %>% select(X, Y)
+clust2 <- train %>% select(X, Y)
+
+clust <- rbind(clust, clust2)
+rm(clust2)
+
+k <- kmeans(clust, 40)
+
+# Add cluster variable back to the data frame with the last n clusters
+# I went with 30 because I suspect that will be enough for prediction
+test$Cluster.40 <- as.factor(k$cluster[1:884262]) 
+train$Cluster.40 <- as.factor(k$cluster[884263:1762311])
+
+rm(k, clust)
+
+
+# K means 20
+clust <- test %>% select(X, Y)
+clust2 <- train %>% select(X, Y)
+
+clust <- rbind(clust, clust2)
+rm(clust2)
+
+k <- kmeans(clust, 20)
+
+# Add cluster variable back to the data frame with the last n clusters
+# I went with 30 because I suspect that will be enough for prediction
+test$Cluster.20 <- as.factor(k$cluster[1:884262]) 
+train$Cluster.20 <- as.factor(k$cluster[884263:1762311])
+
+rm(k, clust)
+
+
+
 
 
 
@@ -105,6 +148,7 @@ final$Id <- test$Id
 
 write.csv(final, file = "dh_submission_14.csv",row.names = FALSE,quote = F)
 
+# Result: 2.56297
 
 final$`LARCENY/THEFT` <- LARCENY.THEFT$X1
 
