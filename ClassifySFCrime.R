@@ -104,6 +104,50 @@ train$Cluster.20 <- as.factor(k$cluster[884263:1762311])
 rm(k, clust)
 
 
+## Now make tables
+
+mytable <- table(train$Category, train$Cluster)
+d <- data.frame(prop.table(mytable, 2))
+
+Crime_Frequencies <- d %>% 
+  spread(key = Var1, value = Freq) %>% 
+  rename(Cluster = Var2)
+
+final <- merge(test, Crime_Frequencies, by = "Cluster")
+
+rm(mytable, d, Crime_Frequencies)
+
+
+mytable <- table(train$Category, train$Cluster.40)
+d <- data.frame(prop.table(mytable, 2))
+
+Crime_Frequencies <- d %>% 
+  spread(key = Var1, value = Freq) %>% 
+  rename(Cluster.40 = Var2)
+
+final.40 <- merge(test, Crime_Frequencies, by = "Cluster.40")
+
+rm(mytable, d, Crime_Frequencies)
+
+
+mytable <- table(train$Category, train$Cluster.20)
+d <- data.frame(prop.table(mytable, 2))
+
+Crime_Frequencies <- d %>% 
+  spread(key = Var1, value = Freq) %>% 
+  rename(Cluster.20 = Var2)
+
+final.25 <- merge(test, Crime_Frequencies, by = "Cluster.20")
+
+rm(mytable, d, Crime_Frequencies)
+
+
+
+# Merge data frames
+temp <- cbind(final, final.25, final.40)
+
+priors <- sapply(unique(colnames(temp)), 
+                 function(x) rowMeans(temp[, colnames(temp) == x, drop = FALSE]))
 
 
 
@@ -617,55 +661,55 @@ write.csv(final,file = "dh_submission_02.csv",row.names = FALSE,quote = F)
 
 
 
-# #### Model 1.0 ####
-#
-### Samples to test on ##
-#trainSample <- droplevels(train[sample(nrow(train), 20000), ])
-# 
-# # Couple conversions
-# trainSample$Hour <- as.factor(trainSample$Hour)
-# test$Hour <- as.factor(test$Hour)
-# 
-# 
-# first_attempt <- randomForest(Category ~ PdDistrict + Hour, data=trainSample, ntree=5000, importance=TRUE)
-# 
-# cm <- data.frame(first_attempt["confusion"])
-# varImpPlot(first_attempt)
-# 
-# 
-# ### Now predict ###
-# # Load test in first and change the dates
-# 
-# predicted <- predict(object = first_attempt, newdata = test, type = "prob")
-# final <- data.frame(Id = test$Id , predicted)
-# 
-# 
-# ## Prepare for submission
-# # Add the factors that were dropped back in
-# final$TREA <- 0
-# final$"PORNOGRAPHY/OBSCENE MAT" <- 0
-# final$"SEX OFFENSES NON FORCIBLE" <- 0
-# 
-# # Now reorder alphabetically
-# final <- final[,order(names(final))]
-# # And move ID back
-# final <- final %>% select(Id, everything())
-# 
-# # Add column names
-# colnames(final)  <- c("Id",levels(train$Category))
-# write.csv(final,file = "dh_submission_01.csv",row.names = FALSE,quote = F)
-# 
-# # Result: 14, 229 / 294
-# 
-# 
-# ## Now I want to check if it helps to take minimum values and add them to maximum for certain rows
-# fo <- final # final_optimized
-# fo[fo < 0.2] <- 0
-# fo$Id <- final$Id
-# write.csv(fo,file = "dh_submission_01_2.csv",row.names = FALSE,quote = F)
-# 
-# # Result: 25, a serious decline
-# 
+#### Model 1.0 ####
+
+## Samples to test on ##
+trainSample <- droplevels(train[sample(nrow(train), 20000), ])
+
+# Couple conversions
+trainSample$Hour <- as.factor(trainSample$Hour)
+test$Hour <- as.factor(test$Hour)
+
+
+first_attempt <- randomForest(Category ~ PdDistrict + Hour, data=trainSample, ntree=5000, importance=TRUE)
+
+cm <- data.frame(first_attempt["confusion"])
+varImpPlot(first_attempt)
+
+
+### Now predict ###
+# Load test in first and change the dates
+
+predicted <- predict(object = first_attempt, newdata = test, type = "prob")
+final <- data.frame(Id = test$Id , predicted)
+
+
+## Prepare for submission
+# Add the factors that were dropped back in
+final$TREA <- 0
+final$"PORNOGRAPHY/OBSCENE MAT" <- 0
+final$"SEX OFFENSES NON FORCIBLE" <- 0
+
+# Now reorder alphabetically
+final <- final[,order(names(final))]
+# And move ID back
+final <- final %>% select(Id, everything())
+
+# Add column names
+colnames(final)  <- c("Id",levels(train$Category))
+write.csv(final,file = "dh_submission_01.csv",row.names = FALSE,quote = F)
+
+# Result: 14, 229 / 294
+
+
+## Now I want to check if it helps to take minimum values and add them to maximum for certain rows
+fo <- final # final_optimized
+fo[fo < 0.2] <- 0
+fo$Id <- final$Id
+write.csv(fo,file = "dh_submission_01_2.csv",row.names = FALSE,quote = F)
+
+# Result: 25, a serious decline
+
 
 
 
