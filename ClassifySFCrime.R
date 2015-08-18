@@ -7,7 +7,7 @@ library(dplyr)
 library(tidyr)
 library(rpart)
 library(rpart.plot)
-# set.seed(543)
+set.seed(543)
 
 train <- read.csv("./train.csv")
 # sample <- read.csv("./sampleSubmission.csv")
@@ -66,6 +66,52 @@ rm(k, clust)
 
 
 
+#### Model 17.0 ####
+# Use the super priors generated in 16 & Update as in 15
+
+train$"LARCENY.THEFT" <- as.factor(ifelse(train$Category == "LARCENY/THEFT", 1, 0))
+
+trainSample <- droplevels(train[sample(nrow(train), 200000), ])
+
+model <- randomForest(LARCENY.THEFT ~ Cluster + X + Y + DayOfWeek + Hour + Year, data=trainSample, ntree=1500, importance=TRUE, do.trace=100)
+
+
+### Now predict ###
+predicted <- predict(object = model, newdata = test, type = "prob")
+LARCENY.THEFT <- data.frame(Id = test$Id , predicted)
+
+
+# Now create priors and update them with the predicted values
+# Priors
+mytable <- table(train$Category, train$Cluster)
+d <- data.frame(prop.table(mytable, 2))
+
+Crime_Frequencies <- d %>% 
+  spread(key = Var1, value = Freq) %>% 
+  rename(Cluster = Var2)
+
+final <- merge(test, Crime_Frequencies, by = "Cluster")
+
+final <- final[c(2,13:51)]
+final <- final[order(final$Id) , ]
+
+# Put in the RF predictions
+LARCENY.THEFT$Prior <- final$`LARCENY/THEFT`
+LARCENY.THEFT$Avg <- rowMeans(LARCENY.THEFT[,3:4])
+final$`LARCENY/THEFT` <- LARCENY.THEFT$Avg
+
+final$Id <- test$Id
+
+
+write.csv(final, file = "dh_submission_14.csv",row.names = FALSE,quote = F)
+
+# Result: 2.56297
+
+
+
+
+
+
 #### Model 16.0  ####
 # Try to make super-priors
 
@@ -115,10 +161,15 @@ Crime_Frequencies <- d %>%
 
 final <- merge(test, Crime_Frequencies, by = "Cluster")
 
-final <- arrange(final, Id)
 
 rm(mytable, d, Crime_Frequencies)
 
+final.30 <-  final[,15:53]
+final.30$Id <- final$Id
+final.30 <- arrange(final.30, Id)
+rm(final)
+
+  
 
 mytable <- table(train$Category, train$Cluster.40)
 d <- data.frame(prop.table(mytable, 2))
@@ -127,9 +178,15 @@ Crime_Frequencies <- d %>%
   spread(key = Var1, value = Freq) %>% 
   rename(Cluster.40 = Var2)
 
-final.40 <- merge(test, Crime_Frequencies, by = "Cluster.40")
+final <- merge(test, Crime_Frequencies, by = "Cluster.40")
 
 rm(mytable, d, Crime_Frequencies)
+
+final.40 <-  final[,15:53]
+final.40$Id <- final$Id
+final.40 <- arrange(final.40, Id)
+rm(final)
+
 
 
 mytable <- table(train$Category, train$Cluster.20)
@@ -139,18 +196,31 @@ Crime_Frequencies <- d %>%
   spread(key = Var1, value = Freq) %>% 
   rename(Cluster.20 = Var2)
 
-final.25 <- merge(test, Crime_Frequencies, by = "Cluster.20")
+final <- merge(test, Crime_Frequencies, by = "Cluster.20")
 
 rm(mytable, d, Crime_Frequencies)
+
+final.20 <-  final[,15:53]
+final.20$Id <- final$Id
+final.20 <- arrange(final.20, Id)
+rm(final)
 
 
 
 # Merge data frames
-temp <- cbind(final, final.25, final.40)
+temp <- cbind(final.20, final.30, final.40)
 
 priors <- sapply(unique(colnames(temp)), 
                  function(x) rowMeans(temp[, colnames(temp) == x, drop = FALSE]))
 
+priors <- as.data.frame(priors)
+
+priors$Id <- test$Id
+
+write.csv(priors, file = "dh_submission_16.csv", row.names = FALSE,quote = F)
+write.csv(priors, file = "priors.csv", row.names = FALSE, quote = F)
+
+# Result: 2.57792
 
 
 
@@ -201,6 +271,7 @@ final$`LARCENY/THEFT` <- LARCENY.THEFT$X1
 write.csv(final, file = "dh_submission_15.csv",row.names = FALSE,quote = F)
 
 # Result: 2.57367 
+
 
 
 
