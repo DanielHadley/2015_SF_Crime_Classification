@@ -115,6 +115,8 @@ Crime_Frequencies <- d %>%
 
 final <- merge(test, Crime_Frequencies, by = "Cluster")
 
+final <- arrange(final, Id)
+
 rm(mytable, d, Crime_Frequencies)
 
 
