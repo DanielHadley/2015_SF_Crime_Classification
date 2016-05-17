@@ -113,37 +113,6 @@ train_final <- test_and_train[884263:1762311,] %>%
   as.matrix()
 
 
-# train_final <- train %>% 
-#   mutate(Category = as.numeric(Category)-1,
-#          DayOfWeek = as.numeric(DayOfWeek)-1,
-#          PdDistrict = as.numeric(PdDistrict)-1,
-#          X = as.numeric(X)-1,
-#          Y = as.numeric(Y)-1,
-#          Hour = as.numeric(Hour)-1,
-#          Year = as.numeric(Year)-1,
-#          Month = as.numeric(Month)-1,
-#          Day = as.numeric(Day)-1,
-#          Cluster = as.numeric(Cluster)-1) %>% 
-#   select(-Dates, -Descript, -Address, -Resolution) %>% 
-#   as.matrix()
-# 
-# 
-# test_final <- test %>% 
-#   mutate(DayOfWeek = as.numeric(DayOfWeek)-1,
-#          PdDistrict = as.numeric(PdDistrict)-1,
-#          X = as.numeric(X)-1,
-#          Y = as.numeric(Y)-1,
-#          Hour = as.numeric(Hour)-1,
-#          Year = as.numeric(Year)-1,
-#          Month = as.numeric(Month)-1,
-#          Day = as.numeric(Day)-1,
-#          Cluster = as.numeric(Cluster)-1) %>% 
-#   select(-Dates, -Address) %>% 
-#   as.matrix()
-
-
-
-
 ## My parameters
 param <- list("objective" = "multi:softprob",
               "eval_metric" = "mlogloss",
@@ -152,6 +121,8 @@ param <- list("objective" = "multi:softprob",
 # xgboost model
 nround  = 15
 xgboost_model <- xgboost(param =param, data = train_final[, -c(10)], label = train_final[, c(10)], nrounds=nround)
+
+xgb.save(xgboost_model, 'xgboost_model_01')
 
 
 # Compute feature importance matrix
@@ -162,33 +133,21 @@ importance_matrix <- xgb.importance(names, model = xgboost_model)
 xgb.plot.importance(importance_matrix)
 
 
-# # Predict
-# pred <- predict(xgboost_model, test_final[, -c(1)])
-# pred = matrix(pred,39,length(pred)/39)
-# pred = t(pred)
-# 
-# # Output submission
-# pred = format(pred, digits=2,scientific=F) # shrink the size of submission
-# pred = data.frame(1:nrow(pred),pred)
-# names(pred) = c('id', levels(train$Category))
-# 
-# write.csv(pred,file='submission.csv', quote=FALSE,row.names=FALSE)
-# 
-# 
-# 
-# pred <- predict(xgboost_model, test_final)
-# test4 <- matrix(pred_xgboost_test, nrow(test), 39)
-# prediction_final <- as.data.frame(test4)
-# colnames(prediction_final)  <- c(levels(train$Category))
-
-
 
 # Predict
 pred <- predict(xgboost_model, test_final)
-pred <- matrix(pred, nrow(test), 39)
-pred <- as.data.frame(pred)
-colnames(pred)  <- c(levels(train$Category))
-pred = format(pred, digits=2,scientific=F)
+
+prob <- matrix(pred, ncol = 39, byrow = T)
+prob <- as.data.frame(prob)
+colnames(prob)  <- c(levels(train$Category))
+prob = format(prob, digits=2,scientific=F)
+
+prob$Id <- test$Id
+write.csv(prob,file = "dh_submission_18.csv",row.names = FALSE,quote = F)
+
+# Sweet!! 2.52588: You just moved up 135 positions on the leaderboard
+
+
 
 
 #### Model 17.0 ####
