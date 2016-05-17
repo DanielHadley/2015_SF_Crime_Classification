@@ -1,3 +1,4 @@
+#### A classification contest: using x vars, predict the type of crime ####
 setwd("~/Github/2015_SF_Crime_Classification/")
 setwd("C:/Users/dhadley/Documents/GitHub/2015_SF_Crime_Classification/")
 setwd("/home/rstudio/Dropbox/2015_Kaggle_SF/") #Amazon EC2
@@ -7,12 +8,16 @@ library(dplyr)
 library(tidyr)
 library(rpart)
 library(rpart.plot)
+library(xgboost) # XGboost approach
 set.seed(543)
+
 
 train <- read.csv("./train.csv")
 # sample <- read.csv("./sampleSubmission.csv")
 test <- read.csv("./test.csv")
 # Only load test when needed
+
+
 
 
 #### Processing data ####
@@ -40,6 +45,14 @@ train$Month<- as.matrix(as.numeric(substring(train$Dates, 6, 7)))
 test$Day<- as.matrix(as.numeric(substring(test$Dates, 9, 10)))
 train$Day<- as.matrix(as.numeric(substring(train$Dates, 9, 10)))
 
+# Rounding off the latitude and longitudes values to 2 decimals 
+test$X <- round(test$X,2)
+test$Y <- round(test$Y,2)
+
+train$X <- round(train$X,2)
+train$Y <- round(train$Y,2)
+
+
 
 
 #### Ok, let's try to engineer some geo-spatial and temporal features ####
@@ -64,6 +77,118 @@ train$Cluster <- as.factor(k$cluster[884263:1762311])
 rm(k, clust)
 
 
+
+
+#### Model 18.0 ####
+# First attempt at xgboost
+
+## Data engineering to prep for xgboost
+test_to_combine <- test %>% 
+  select(-Id)
+
+train_to_combine <- train %>% 
+  select(-Descript, -Resolution, - Category)
+
+test_and_train <- rbind(test_to_combine, train_to_combine)
+
+rm(test_to_combine, train_to_combine)
+
+test_and_train <- test_and_train %>% 
+  mutate(DayOfWeek = as.numeric(DayOfWeek)-1,
+         PdDistrict = as.numeric(PdDistrict)-1,
+         X = as.numeric(X)-1,
+         Y = as.numeric(Y)-1,
+         Hour = as.numeric(Hour)-1,
+         Year = as.numeric(Year)-1,
+         Month = as.numeric(Month)-1,
+         Day = as.numeric(Day)-1,
+         Cluster = as.numeric(Cluster)-1) %>% 
+  select(-Dates, -Address)
+  
+test_final <- test_and_train[1:884262,] %>% 
+  as.matrix()
+
+train_final <- test_and_train[884263:1762311,] %>% 
+  mutate(Category = as.numeric(train$Category)-1) %>% 
+  as.matrix()
+
+
+# train_final <- train %>% 
+#   mutate(Category = as.numeric(Category)-1,
+#          DayOfWeek = as.numeric(DayOfWeek)-1,
+#          PdDistrict = as.numeric(PdDistrict)-1,
+#          X = as.numeric(X)-1,
+#          Y = as.numeric(Y)-1,
+#          Hour = as.numeric(Hour)-1,
+#          Year = as.numeric(Year)-1,
+#          Month = as.numeric(Month)-1,
+#          Day = as.numeric(Day)-1,
+#          Cluster = as.numeric(Cluster)-1) %>% 
+#   select(-Dates, -Descript, -Address, -Resolution) %>% 
+#   as.matrix()
+# 
+# 
+# test_final <- test %>% 
+#   mutate(DayOfWeek = as.numeric(DayOfWeek)-1,
+#          PdDistrict = as.numeric(PdDistrict)-1,
+#          X = as.numeric(X)-1,
+#          Y = as.numeric(Y)-1,
+#          Hour = as.numeric(Hour)-1,
+#          Year = as.numeric(Year)-1,
+#          Month = as.numeric(Month)-1,
+#          Day = as.numeric(Day)-1,
+#          Cluster = as.numeric(Cluster)-1) %>% 
+#   select(-Dates, -Address) %>% 
+#   as.matrix()
+
+
+
+
+## My parameters
+param <- list("objective" = "multi:softprob",
+              "eval_metric" = "mlogloss",
+              "num_class" = 39)
+
+# xgboost model
+nround  = 15
+xgboost_model <- xgboost(param =param, data = train_final[, -c(10)], label = train_final[, c(10)], nrounds=nround)
+
+
+# Compute feature importance matrix
+names <- dimnames(train_final)[[2]]
+importance_matrix <- xgb.importance(names, model = xgboost_model)
+
+# Plotting
+xgb.plot.importance(importance_matrix)
+
+
+# # Predict
+# pred <- predict(xgboost_model, test_final[, -c(1)])
+# pred = matrix(pred,39,length(pred)/39)
+# pred = t(pred)
+# 
+# # Output submission
+# pred = format(pred, digits=2,scientific=F) # shrink the size of submission
+# pred = data.frame(1:nrow(pred),pred)
+# names(pred) = c('id', levels(train$Category))
+# 
+# write.csv(pred,file='submission.csv', quote=FALSE,row.names=FALSE)
+# 
+# 
+# 
+# pred <- predict(xgboost_model, test_final)
+# test4 <- matrix(pred_xgboost_test, nrow(test), 39)
+# prediction_final <- as.data.frame(test4)
+# colnames(prediction_final)  <- c(levels(train$Category))
+
+
+
+# Predict
+pred <- predict(xgboost_model, test_final)
+pred <- matrix(pred, nrow(test), 39)
+pred <- as.data.frame(pred)
+colnames(pred)  <- c(levels(train$Category))
+pred = format(pred, digits=2,scientific=F)
 
 
 #### Model 17.0 ####
@@ -106,8 +231,6 @@ final$Id <- test$Id
 write.csv(final, file = "dh_submission_14.csv",row.names = FALSE,quote = F)
 
 # Result: 2.56297
-
-
 
 
 
