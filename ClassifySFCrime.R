@@ -8,6 +8,7 @@ library(dplyr)
 library(tidyr)
 library(rpart)
 library(rpart.plot)
+library(stringr)
 library(xgboost) # XGboost approach
 set.seed(543)
 
@@ -116,7 +117,7 @@ for (r in 1:nrow(log_table)) {
 
 log_table$Address <- A_counts$Address
 
-write.csv(log_table, "./log_table_address_frequencies.csv")
+write.csv(log_table, "./log_table_address_frequencies.csv", row.names = F)
 
 rm(A_counts, A_C_counts, C_counts, log_m, prob_m, prob_table, table)
 
@@ -178,29 +179,38 @@ test_and_train <- test_and_train %>%
 
 
 # Put the log odds into the df
-test_and_train2 <- merge(test_and_train, log_table, by = "Address", all.x = T)
+# This first line puts them all in, but there are about 3k that don't have log odds 
+# Because they are in test but not train
+test_and_train <- merge(test_and_train, log_table, by = "Address", all.x = T)
 
+# Create a df of default logodds to merge with a subset of test_and_train that is missing 
 default_logodds_df <- data.frame(t(default_logodds))
-colnames(default_logodds_df) <- colnames(test_and_train2)[14:52]
+colnames(default_logodds_df) <- colnames(test_and_train)[14:52]
 default_logodds_df$var_to_combine <- 4321
 
-
-need_replacement <- test_and_train2 %>% 
+# These are the problem ones with addresses that are in test but not train
+need_replacement <- test_and_train %>% 
   filter(is.na(ASSAULT)) %>% 
   select(-ARSON : - WEAPON.LAWS) %>% 
   mutate(var_to_combine = rep(4321))
   
+# Add in the defaults
 need_replacement <- merge(need_replacement, default_logodds_df) %>% 
   select(-var_to_combine)
 
-test_and_train_final <- test_and_train2 %>% filter(!is.na(ASSAULT))
+# Now take out the problem ones
+test_and_train <- test_and_train %>% filter(!is.na(ASSAULT))
 
-test_and_train_final <- rbind(test_and_train_final, need_replacement)
+# And add them back in with the defaults
+test_and_train <- rbind(test_and_train, need_replacement) %>% 
+  arrange(test_and_train_ID)
+
+rm(need_replacement)
 
 
 
 ## More data engineering 
-test_and_train <- test_and_train_final %>% 
+test_and_train <- test_and_train %>% 
   # binarize the variable according to the location of the crime (in the street/intersection)
   mutate(AddOf = sapply(Address, FUN=function(x) {strsplit(as.character(x), split="of ")[[1]][2]}),
          street_or_intersection = ifelse(is.na(AddOf), 0, 1)) %>% 
@@ -241,7 +251,7 @@ param <- list("objective" = "multi:softprob",
               "num_class" = 39)
 
 # xgboost model
-nround  = 15
+nround  = 85
 xgboost_model <- xgboost(param =param, data = train_final[, -c(52)], label = train_final[, c(52)], nrounds=nround)
 
 xgb.save(xgboost_model, 'xgboost_model_05')
