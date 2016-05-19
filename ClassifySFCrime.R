@@ -79,6 +79,197 @@ rm(k, clust)
 
 
 
+#### Model 24.0 ####
+# Featurize addresses as per
+# kaggle.com/c/sf-crime/forums/t/15836/predicting-crime-categories-with-address-featurization-and-neural-nets
+
+### First create a default of logodds for each address
+# And then update with a proper table. 
+# The default is like the priors, in a bayesian sense, and the table provides updates
+# We will use this table as a feature in the model
+C_counts = train %>% group_by(Category) %>% summarise(n=n())
+A_C_counts = train %>% group_by(Address, Category) %>% summarise(n=n())
+A_counts = train %>% group_by(Address) %>% summarise(n=n())
+default_logodds = log(C_counts$n / nrow(train)) - log(1 - (C_counts$n / nrow(train)))
+
+table <- spread(A_C_counts, Category, n)
+table[is.na(table)] <- 0
+prob_m <- apply(table[2:40], 1, function(x) x / sum(x))
+prob_table <- (data.frame(t(prob_m)))
+
+log_m <- apply(prob_table, 1, function(x) log(x))
+log_m[is.infinite(log_m)] <- 0
+log_table <- (data.frame(t(log_m)))
+
+
+# These are ones where there was only one categroy at that address
+# Or where there were none and so the odds are 0
+# We replace both kinds with the default logodds
+for (r in 1:nrow(log_table)) {
+  for (c in 1:ncol(log_table)) {
+    log_table[r,c] <- ifelse(log_table[r,c] == 0 | log_table[r,c] == 1, default_logodds[c], log_table[r,c])
+  }
+  
+}
+
+
+
+log_table$Address <- A_counts$Address
+
+write.csv(log_table, "./log_table_address_frequencies.csv")
+
+rm(A_counts, A_C_counts, C_counts, log_m, prob_m, prob_table, table)
+
+
+
+# The code below is for making a steet scale variable
+# This essentially measures how often the stret shows up in the data
+# we will see if this is predictive
+test_to_combine <- test %>% 
+  select(-Id)
+
+train_to_combine <- train %>% 
+  select(-Descript, -Resolution, - Category)
+
+test_and_train <- rbind(test_to_combine, train_to_combine)
+
+rm(test_to_combine, train_to_combine)
+
+test_and_train <- test_and_train %>% 
+  mutate(test_and_train_ID = seq(1:nrow(test_and_train)))
+
+test_and_train$street_1 <- str_split_fixed(as.character(test_and_train$Address), " of ", 2)[,2]
+test_and_train$street_2 <- str_split_fixed(as.character(test_and_train$Address), " / ", 2)[,2]
+test_and_train$street_3 <- ifelse(test_and_train$street_1 == "", 
+                                  str_split_fixed(as.character(test_and_train$Address), " / ", 2)[,1],
+                                  "")
+
+street_1 <- test_and_train %>% 
+  group_by(street_1) %>% 
+  summarise(n=n())%>% 
+  rename(street = street_1)
+
+street_2 <- test_and_train %>% 
+  group_by(street_2) %>% 
+  summarise(n=n()) %>% 
+  rename(street = street_2)
+
+street_3 <- test_and_train %>% 
+  group_by(street_3) %>% 
+  summarise(n=n())%>% 
+  rename(street = street_3)
+
+street_final <- rbind(street_1, street_2, street_3) %>% 
+  group_by(street) %>% 
+  summarise(n = sum(n)) %>% 
+  filter(street != "")
+
+test_and_train <- merge(test_and_train, street_final, by.x = "street_1", by.y = "street", all.x = T)
+test_and_train <- merge(test_and_train, street_final, by.x = "street_2", by.y = "street", all.x = T)
+test_and_train <- merge(test_and_train, street_final, by.x = "street_3", by.y = "street", all.x = T)
+
+rm(street_1, street_2, street_3, street_final)
+
+test_and_train <- test_and_train %>% 
+  mutate(street_scale = pmax(n, n.y, n.x, na.rm = T)) %>% 
+  select(-n, -n.x, -n.y, -street_1, -street_2, -street_3) %>% 
+  arrange(test_and_train_ID)
+
+
+
+# Put the log odds into the df
+test_and_train2 <- merge(test_and_train, log_table, by = "Address", all.x = T)
+
+default_logodds_df <- data.frame(t(default_logodds))
+colnames(default_logodds_df) <- colnames(test_and_train2)[14:52]
+default_logodds_df$var_to_combine <- 4321
+
+
+need_replacement <- test_and_train2 %>% 
+  filter(is.na(ASSAULT)) %>% 
+  select(-ARSON : - WEAPON.LAWS) %>% 
+  mutate(var_to_combine = rep(4321))
+  
+need_replacement <- merge(need_replacement, default_logodds_df) %>% 
+  select(-var_to_combine)
+
+test_and_train_final <- test_and_train2 %>% filter(!is.na(ASSAULT))
+
+test_and_train_final <- rbind(test_and_train_final, need_replacement)
+
+
+
+## More data engineering 
+test_and_train <- test_and_train_final %>% 
+  # binarize the variable according to the location of the crime (in the street/intersection)
+  mutate(AddOf = sapply(Address, FUN=function(x) {strsplit(as.character(x), split="of ")[[1]][2]}),
+         street_or_intersection = ifelse(is.na(AddOf), 0, 1)) %>% 
+  select(-AddOf) %>% 
+  # Creating a new variable Period_day which includes 3 categories: morning (5h-14h), 
+  # afternoon (14h-20th)and night(20h-5h) 
+  mutate(Period_day = ifelse((Hour >= 5) & (Hour < 14), 0, 
+                             ifelse((Hour >=14) & (Hour <20), 1, 2)))
+
+
+
+# Get it ready for the model
+test_and_train <- test_and_train %>% 
+  mutate(DayOfWeek = as.numeric(DayOfWeek)-1,
+         PdDistrict = as.numeric(PdDistrict)-1,
+         X = as.numeric(X)-1,
+         Y = as.numeric(Y)-1,
+         Hour = as.numeric(Hour)-1,
+         Year = as.numeric(Year)-1,
+         Month = as.numeric(Month)-1,
+         Day = as.numeric(Day)-1,
+         street_scale = as.numeric(street_scale)-1,
+         Cluster = as.numeric(Cluster)-1) %>% 
+  select(-Dates, -Address, -test_and_train_ID)
+
+test_final <- test_and_train[1:884262,] %>% 
+  as.matrix()
+
+train_final <- test_and_train[884263:1762311,] %>% 
+  mutate(Category = as.numeric(train$Category)-1) %>% 
+  as.matrix()
+
+
+
+## My parameters
+param <- list("objective" = "multi:softprob",
+              "eval_metric" = "mlogloss",
+              "num_class" = 39)
+
+# xgboost model
+nround  = 15
+xgboost_model <- xgboost(param =param, data = train_final[, -c(52)], label = train_final[, c(52)], nrounds=nround)
+
+xgb.save(xgboost_model, 'xgboost_model_05')
+
+
+# Compute feature importance matrix
+names <- dimnames(train_final)[[2]]
+importance_matrix <- xgb.importance(names, model = xgboost_model)
+
+# Plotting
+xgb.plot.importance(importance_matrix)
+
+
+
+# Predict
+pred <- predict(xgboost_model, test_final)
+
+prob <- matrix(pred, ncol = 39, byrow = T)
+prob <- as.data.frame(prob)
+colnames(prob)  <- c(levels(train$Category))
+prob = format(prob, digits=2,scientific=F)
+
+prob$Id <- test$Id
+write.csv(prob,file = "dh_submission_23.csv",row.names = FALSE,quote = F)
+
+
+
+
 #### Model 23.0 ####
 # This time we will move away from xg to see how well we do with frequencies from the given address
 # I just read about address featurization and it seems similar to what I was doing earlier with clusters
