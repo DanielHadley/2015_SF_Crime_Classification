@@ -205,7 +205,7 @@ test_and_train <- test_and_train %>% filter(!is.na(ASSAULT))
 test_and_train <- rbind(test_and_train, need_replacement) %>% 
   arrange(test_and_train_ID)
 
-rm(need_replacement)
+rm(need_replacement, log_table, default_logodds_df, default_logodds)
 
 
 
@@ -275,7 +275,7 @@ colnames(prob)  <- c(levels(train$Category))
 prob = format(prob, digits=2,scientific=F)
 
 prob$Id <- test$Id
-write.csv(prob,file = "dh_submission_23.csv",row.names = FALSE,quote = F)
+write.csv(prob,file = "dh_submission_24.csv",row.names = FALSE,quote = F)
 
 
 
