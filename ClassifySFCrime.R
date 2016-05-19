@@ -79,6 +79,350 @@ rm(k, clust)
 
 
 
+#### Model 23.0 ####
+# This time we will move away from xg to see how well we do with frequencies from the given address
+# I just read about address featurization and it seems similar to what I was doing earlier with clusters
+mytable <- table(train$Category, train$Address)
+d <- data.frame(prop.table(mytable, 1))
+
+Crime_Frequencies <- d %>% 
+  spread(key = Var1, value = Freq) %>% 
+  rename(Address = Var2)
+
+final <- merge(test, Crime_Frequencies, by = "Address", all.x = TRUE)
+
+# find out which ones are missing
+missing <- final %>% 
+  filter(is.na(ARSON)) %>% 
+  select(Id)
+
+# impute missing from last succesful model
+model_22 <- read.csv("./dh_submission_22.csv")
+
+imputed <- merge(missing, model_22)
+
+finalFinal <- final %>% 
+  select(Id, ARSON:`WEAPON LAWS`) %>% 
+  filter(!is.na(ARSON))
+
+colnames(imputed) <- colnames(finalFinal)
+
+finalFinalFinal <- rbind(finalFinal, imputed)
+
+finalFinalFinal = format(finalFinalFinal, digits=2,scientific=F)
+
+write.csv(finalFinalFinal, file = "dh_submission_23.csv",row.names = FALSE,quote = F)
+
+# Ugh: Your submission scored 6.01974, which is not an improvement of your best score. Keep trying!
+
+
+
+
+#### Model 22.0 ####
+# Start to engineer more features
+
+# The code below is for making a steet scale variable
+# This essentially measures how often the stret shows up in the data
+# we will see if this is predictive
+test_to_combine <- test %>% 
+  select(-Id)
+
+train_to_combine <- train %>% 
+  select(-Descript, -Resolution, - Category)
+
+test_and_train <- rbind(test_to_combine, train_to_combine)
+
+rm(test_to_combine, train_to_combine)
+
+test_and_train <- test_and_train %>% 
+  mutate(test_and_train_ID = seq(1:nrow(test_and_train)))
+
+test_and_train$street_1 <- str_split_fixed(as.character(test_and_train$Address), " of ", 2)[,2]
+test_and_train$street_2 <- str_split_fixed(as.character(test_and_train$Address), " / ", 2)[,2]
+test_and_train$street_3 <- ifelse(test_and_train$street_1 == "", 
+                                  str_split_fixed(as.character(test_and_train$Address), " / ", 2)[,1],
+                                  "")
+
+street_1 <- test_and_train %>% 
+  group_by(street_1) %>% 
+  summarise(n=n())%>% 
+  rename(street = street_1)
+
+street_2 <- test_and_train %>% 
+  group_by(street_2) %>% 
+  summarise(n=n()) %>% 
+  rename(street = street_2)
+  
+street_3 <- test_and_train %>% 
+  group_by(street_3) %>% 
+  summarise(n=n())%>% 
+  rename(street = street_3)
+
+street_final <- rbind(street_1, street_2, street_3) %>% 
+  group_by(street) %>% 
+  summarise(n = sum(n)) %>% 
+  filter(street != "")
+
+test_and_train <- merge(test_and_train, street_final, by.x = "street_1", by.y = "street", all.x = T)
+test_and_train <- merge(test_and_train, street_final, by.x = "street_2", by.y = "street", all.x = T)
+test_and_train <- merge(test_and_train, street_final, by.x = "street_3", by.y = "street", all.x = T)
+
+rm(street_1, street_2, street_3, street_final)
+
+test_and_train <- test_and_train %>% 
+  mutate(street_scale = pmax(n, n.y, n.x, na.rm = T)) %>% 
+  select(-n, -n.x, -n.y, -street_1, -street_2, -street_3) %>% 
+  arrange(test_and_train_ID)
+
+
+## More data engineering 
+test_and_train <- test_and_train %>% 
+  # binarize the variable according to the location of the crime (in the street/intersection)
+  mutate(AddOf = sapply(Address, FUN=function(x) {strsplit(as.character(x), split="of ")[[1]][2]}),
+         street_or_intersection = ifelse(is.na(AddOf), 0, 1)) %>% 
+  select(-AddOf) %>% 
+  # Creating a new variable Period_day which includes 3 categories: morning (5h-14h), 
+  # afternoon (14h-20th)and night(20h-5h) 
+  mutate(Period_day = ifelse((Hour >= 5) & (Hour < 14), 0, 
+                                        ifelse((Hour >=14) & (Hour <20), 1, 2)))
+
+
+
+# Get it ready for the model
+test_and_train <- test_and_train %>% 
+  mutate(DayOfWeek = as.numeric(DayOfWeek)-1,
+         PdDistrict = as.numeric(PdDistrict)-1,
+         X = as.numeric(X)-1,
+         Y = as.numeric(Y)-1,
+         Hour = as.numeric(Hour)-1,
+         Year = as.numeric(Year)-1,
+         Month = as.numeric(Month)-1,
+         Day = as.numeric(Day)-1,
+         street_scale = as.numeric(street_scale)-1,
+         Cluster = as.numeric(Cluster)-1) %>% 
+  select(-Dates, -Address, -test_and_train_ID)
+
+test_final <- test_and_train[1:884262,] %>% 
+  as.matrix()
+
+train_final <- test_and_train[884263:1762311,] %>% 
+  mutate(Category = as.numeric(train$Category)-1) %>% 
+  as.matrix()
+
+
+
+## My parameters
+param <- list("objective" = "multi:softprob",
+              "eval_metric" = "mlogloss",
+              "num_class" = 39)
+
+# xgboost model
+nround  = 65
+xgboost_model <- xgboost(param =param, data = train_final[, -c(13)], label = train_final[, c(13)], nrounds=nround)
+
+xgb.save(xgboost_model, 'xgboost_model_04')
+
+
+# Compute feature importance matrix
+names <- dimnames(train_final)[[2]]
+importance_matrix <- xgb.importance(names, model = xgboost_model)
+
+# Plotting
+xgb.plot.importance(importance_matrix)
+
+
+
+# Predict
+pred <- predict(xgboost_model, test_final)
+
+prob <- matrix(pred, ncol = 39, byrow = T)
+prob <- as.data.frame(prob)
+colnames(prob)  <- c(levels(train$Category))
+prob = format(prob, digits=2,scientific=F)
+
+prob$Id <- test$Id
+write.csv(prob,file = "dh_submission_22.csv",row.names = FALSE,quote = F)
+
+# Sweet!! 2.38580: You just moved up 187 positions on the leaderboard
+
+
+
+
+
+#### Model 21.0 ####
+# Combine model 19 with super priors
+
+priors <- read.csv("./priors.csv")
+model_19 <- read.csv("./dh_submission_19.csv")
+
+# For names
+train <- read.csv("./train.csv")
+
+
+
+# Merge data frames
+temp <- cbind(priors, model_19)
+
+model <- sapply(unique(colnames(temp)), 
+                 function(x) rowMeans(temp[, colnames(temp) == x, drop = FALSE]))
+
+model <- as.data.frame(model)
+model <- format(model, digits=2,scientific=F)
+
+colnames(model)  <- c(levels(train$Category), "Id")
+
+
+write.csv(model, file = "dh_submission_21.csv", row.names = FALSE,quote = F)
+
+#2.51222 Averaging with the 'super priors' actually took this score down relative to 19
+
+
+
+
+#### Model 20.0 ####
+# Third attempt at xgboost
+# I seem to have overfit this one
+
+## Data engineering to prep for xgboost
+test_to_combine <- test %>% 
+  select(-Id)
+
+train_to_combine <- train %>% 
+  select(-Descript, -Resolution, - Category)
+
+test_and_train <- rbind(test_to_combine, train_to_combine)
+
+rm(test_to_combine, train_to_combine)
+
+test_and_train <- test_and_train %>% 
+  mutate(DayOfWeek = as.numeric(DayOfWeek)-1,
+         PdDistrict = as.numeric(PdDistrict)-1,
+         X = as.numeric(X)-1,
+         Y = as.numeric(Y)-1,
+         Hour = as.numeric(Hour)-1,
+         Year = as.numeric(Year)-1,
+         Month = as.numeric(Month)-1,
+         Day = as.numeric(Day)-1,
+         Cluster = as.numeric(Cluster)-1) %>% 
+  select(-Dates, -Address)
+
+test_final <- test_and_train[1:884262,] %>% 
+  as.matrix()
+
+train_final <- test_and_train[884263:1762311,] %>% 
+  mutate(Category = as.numeric(train$Category)-1) %>% 
+  as.matrix()
+
+
+## My parameters
+param <- list("objective" = "multi:softprob",
+              "eval_metric" = "mlogloss",
+              "num_class" = 39)
+
+# xgboost model
+nround  = 155
+xgboost_model <- xgboost(param =param, data = train_final[, -c(10)], label = train_final[, c(10)], nrounds=nround)
+
+xgb.save(xgboost_model, 'xgboost_model_03')
+
+
+# Compute feature importance matrix
+names <- dimnames(train_final)[[2]]
+importance_matrix <- xgb.importance(names, model = xgboost_model)
+
+# Plotting
+xgb.plot.importance(importance_matrix)
+
+
+
+# Predict
+pred <- predict(xgboost_model, test_final)
+
+prob <- matrix(pred, ncol = 39, byrow = T)
+prob <- as.data.frame(prob)
+colnames(prob)  <- c(levels(train$Category))
+prob = format(prob, digits=2,scientific=F)
+
+prob$Id <- test$Id
+write.csv(prob,file = "dh_submission_20.csv",row.names = FALSE,quote = F)
+
+# Hmmm 2.49614: which is not an improvement of your best score. Keep trying! 
+# Seems like I am overfitting now - too many nrounds
+
+
+
+
+#### Model 19.0 ####
+# First attempt at xgboost
+
+## Data engineering to prep for xgboost
+test_to_combine <- test %>% 
+  select(-Id)
+
+train_to_combine <- train %>% 
+  select(-Descript, -Resolution, - Category)
+
+test_and_train <- rbind(test_to_combine, train_to_combine)
+
+rm(test_to_combine, train_to_combine)
+
+test_and_train <- test_and_train %>% 
+  mutate(DayOfWeek = as.numeric(DayOfWeek)-1,
+         PdDistrict = as.numeric(PdDistrict)-1,
+         X = as.numeric(X)-1,
+         Y = as.numeric(Y)-1,
+         Hour = as.numeric(Hour)-1,
+         Year = as.numeric(Year)-1,
+         Month = as.numeric(Month)-1,
+         Day = as.numeric(Day)-1,
+         Cluster = as.numeric(Cluster)-1) %>% 
+  select(-Dates, -Address)
+
+test_final <- test_and_train[1:884262,] %>% 
+  as.matrix()
+
+train_final <- test_and_train[884263:1762311,] %>% 
+  mutate(Category = as.numeric(train$Category)-1) %>% 
+  as.matrix()
+
+
+## My parameters
+param <- list("objective" = "multi:softprob",
+              "eval_metric" = "mlogloss",
+              "num_class" = 39)
+
+# xgboost model
+nround  = 55
+xgboost_model <- xgboost(param =param, data = train_final[, -c(10)], label = train_final[, c(10)], nrounds=nround)
+
+xgb.save(xgboost_model, 'xgboost_model_02')
+
+
+# Compute feature importance matrix
+names <- dimnames(train_final)[[2]]
+importance_matrix <- xgb.importance(names, model = xgboost_model)
+
+# Plotting
+xgb.plot.importance(importance_matrix)
+
+
+
+# Predict
+pred <- predict(xgboost_model, test_final)
+
+prob <- matrix(pred, ncol = 39, byrow = T)
+prob <- as.data.frame(prob)
+colnames(prob)  <- c(levels(train$Category))
+prob = format(prob, digits=2,scientific=F)
+
+prob$Id <- test$Id
+write.csv(prob,file = "dh_submission_19.csv",row.names = FALSE,quote = F)
+
+# Sweet!! 2.48644: You just moved up 84 positions on the leaderboard
+
+
+
+
 #### Model 18.0 ####
 # First attempt at xgboost
 
