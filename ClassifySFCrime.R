@@ -139,16 +139,37 @@ test_and_train <- test_and_train %>%
   arrange(test_and_train_ID)
 
 
+## Make an address_scale as above with street
+by_address <- test_and_train %>% group_by(Address) %>% summarise(address_scale=n())
+test_and_train <- merge(test_and_train, by_address, by = "Address")
+rm(by_address)
+
+
+
+
 ## More data engineering 
 test_and_train <- test_and_train %>% 
+  
   # binarize the variable according to the location of the crime (in the street/intersection)
   mutate(AddOf = sapply(Address, FUN=function(x) {strsplit(as.character(x), split="of ")[[1]][2]}),
          street_or_intersection = ifelse(is.na(AddOf), 0, 1)) %>% 
-  select(-AddOf) %>% 
+  select(-AddOf) %>%
+  
   # Creating a new variable Period_day which includes 3 categories: morning (5h-14h), 
   # afternoon (14h-20th)and night(20h-5h) 
   mutate(Period_day = ifelse((Hour >= 5) & (Hour < 14), 0, 
-                             ifelse((Hour >=14) & (Hour <20), 1, 2)))
+                             ifelse((Hour >=14) & (Hour <20), 1, 2))) %>% 
+  
+  # Create logs and Z of several variables
+  mutate(street_scale_log = log(street_scale),
+         address_scale_log = log(address_scale),
+         X_z = scale(X),
+         Y_z = scale(Y)) %>% 
+  
+  # Rotate X and Ys
+  mutate(rot45_X = .707 * Y + .707 * X,
+         rot45_Y = .707 * Y - .707 * X,
+         radial_r = sqrt(`^`(Y,2) + `^`(X, 2)))
 
 
 
@@ -163,7 +184,8 @@ test_and_train <- test_and_train %>%
          Month = as.numeric(Month)-1,
          Day = as.numeric(Day)-1,
          street_scale = as.numeric(street_scale)-1,
-         Cluster = as.numeric(Cluster)-1) %>% 
+         Cluster = as.numeric(Cluster)-1) %>%
+  arrange(test_and_train_ID) %>% 
   select(-Dates, -Address, -test_and_train_ID)
 
 test_final <- test_and_train[1:884262,] %>% 
@@ -180,16 +202,39 @@ param <- list("objective" = "multi:softprob",
               "eval_metric" = "mlogloss",
               "num_class" = 39)
 
-# xgboost model
-nround  = 65
-xgboost_model <- xgboost(param =param, data = train_final[, -c(13)], label = train_final[, c(13)], nrounds=nround)
 
-xgb.save(xgboost_model, 'xgboost_model_04')
+# Cross validization 
+cv.nround <- 200
+cv.nfold <- 7
+
+xgboost_cv = xgb.cv(param=param, data = train_final[, -c(21)], label = train_final[, c(21)], nfold = cv.nfold, nrounds = cv.nround)
+
+# [0]	train-mlogloss:3.081633+0.000901	test-mlogloss:3.084943+0.002171
+# ...
+# [39]	train-mlogloss:2.215668+0.001409	test-mlogloss:2.336232+0.003861
+
+# Need to inspect this closely
+plot(xgboost_cv$train.mlogloss.mean, xgboost_cv$test.mlogloss.mean)
+
+# Too many outliers
+xgboost_cv_n_outliers <- xgboost_cv %>% filter(train.mlogloss.mean < 2.2)
+plot(xgboost_cv_n_outliers$train.mlogloss.mean, xgboost_cv_n_outliers$test.mlogloss.mean)
+# looks like 2.5 is about where the relationship starts flattening out
+
+
+
+# xgboost model
+nround  = 35
+xgboost_model <- xgboost(param =param, data = train_final[, -c(21)], label = train_final[, c(21)], nrounds=nround)
+
+xgb.save(xgboost_model, 'xgboost_model_26')
 
 
 # Compute feature importance matrix
 names <- dimnames(train_final)[[2]]
 importance_matrix <- xgb.importance(names, model = xgboost_model)
+
+write.csv(importance_matrix, "./imimportance_matrix_26.csv")
 
 # Plotting
 xgb.plot.importance(importance_matrix)
@@ -205,9 +250,10 @@ colnames(prob)  <- c(levels(train$Category))
 prob = format(prob, digits=2,scientific=F)
 
 prob$Id <- test$Id
-write.csv(prob,file = "dh_submission_22.csv",row.names = FALSE,quote = F)
+write.csv(prob,file = "dh_submission_26.csv",row.names = FALSE,quote = F)
 
-# Sweet!! 2.38580: You just moved up 187 positions on the leaderboard
+# 2.36619, You just moved up 34 positions on the leaderboard
+# Very small incremental improvement over 22
 
 
 
