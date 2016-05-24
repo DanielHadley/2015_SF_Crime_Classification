@@ -80,6 +80,188 @@ rm(k, clust)
 
 
 
+#### Model 27.0 ####
+# drop some features that were not adding much in 26, 
+# engineer more on the x,y
+
+# The code below is for making a steet scale variable
+# This essentially measures how often the stret shows up in the data
+# we will see if this is predictive
+test_to_combine <- test %>% 
+  select(-Id)
+
+train_to_combine <- train %>% 
+  select(-Descript, -Resolution, - Category)
+
+test_and_train <- rbind(test_to_combine, train_to_combine)
+
+rm(test_to_combine, train_to_combine)
+
+test_and_train <- test_and_train %>% 
+  mutate(test_and_train_ID = seq(1:nrow(test_and_train)))
+
+test_and_train$street_1 <- str_split_fixed(as.character(test_and_train$Address), " of ", 2)[,2]
+test_and_train$street_2 <- str_split_fixed(as.character(test_and_train$Address), " / ", 2)[,2]
+test_and_train$street_3 <- ifelse(test_and_train$street_1 == "", 
+                                  str_split_fixed(as.character(test_and_train$Address), " / ", 2)[,1],
+                                  "")
+
+street_1 <- test_and_train %>% 
+  group_by(street_1) %>% 
+  summarise(n=n())%>% 
+  rename(street = street_1)
+
+street_2 <- test_and_train %>% 
+  group_by(street_2) %>% 
+  summarise(n=n()) %>% 
+  rename(street = street_2)
+
+street_3 <- test_and_train %>% 
+  group_by(street_3) %>% 
+  summarise(n=n())%>% 
+  rename(street = street_3)
+
+street_final <- rbind(street_1, street_2, street_3) %>% 
+  group_by(street) %>% 
+  summarise(n = sum(n)) %>% 
+  filter(street != "")
+
+test_and_train <- merge(test_and_train, street_final, by.x = "street_1", by.y = "street", all.x = T)
+test_and_train <- merge(test_and_train, street_final, by.x = "street_2", by.y = "street", all.x = T)
+test_and_train <- merge(test_and_train, street_final, by.x = "street_3", by.y = "street", all.x = T)
+
+rm(street_1, street_2, street_3, street_final)
+
+test_and_train <- test_and_train %>% 
+  mutate(street_scale = pmax(n, n.y, n.x, na.rm = T)) %>% 
+  select(-n, -n.x, -n.y, -street_1, -street_2, -street_3) %>% 
+  arrange(test_and_train_ID)
+
+
+## Make an address_scale as above with street
+by_address <- test_and_train %>% group_by(Address) %>% summarise(address_scale=n())
+test_and_train <- merge(test_and_train, by_address, by = "Address")
+rm(by_address)
+
+
+
+
+## More data engineering 
+test_and_train <- test_and_train %>% 
+  
+  # binarize the variable according to the location of the crime (in the street/intersection)
+  mutate(AddOf = sapply(Address, FUN=function(x) {strsplit(as.character(x), split="of ")[[1]][2]}),
+         street_or_intersection = ifelse(is.na(AddOf), 0, 1)) %>% 
+  select(-AddOf) %>%
+  
+  # Creating a new variable Period_day which includes 3 categories: morning (5h-14h), 
+  # afternoon (14h-20th)and night(20h-5h) 
+  mutate(Period_day = ifelse((Hour >= 5) & (Hour < 14), 0, 
+                             ifelse((Hour >=14) & (Hour <20), 1, 2))) %>% 
+  
+  # Rotate X and Ys
+  # https://www.kaggle.com/c/sf-crime/forums/t/18853/feature-engineering-of-lat-long-x-y-helps
+  mutate(rot45_X = .707 * Y + .707 * X,
+         rot45_Y = .707 * Y - .707 * X,
+         rot30_X = (1.732/2) * X + (1/2) * Y,
+         rot30_Y = (1.732/2) * Y + (1/2) * X,
+         rot60_X = (1/2) * X + (1.732/2) * Y,
+         rot60_Y = (1/2) * Y - (1.732/2) * X,
+         radial_r = sqrt(`^`(Y,2) + `^`(X, 2)))
+
+
+
+# Get it ready for the model
+test_and_train <- test_and_train %>% 
+  mutate(DayOfWeek = as.numeric(DayOfWeek)-1,
+         PdDistrict = as.numeric(PdDistrict)-1,
+         X = as.numeric(X)-1,
+         Y = as.numeric(Y)-1,
+         Hour = as.numeric(Hour)-1,
+         Year = as.numeric(Year)-1,
+         Month = as.numeric(Month)-1,
+         Day = as.numeric(Day)-1,
+         street_scale = as.numeric(street_scale)-1,
+         Cluster = as.numeric(Cluster)-1) %>%
+  arrange(test_and_train_ID) %>% 
+  select(-Dates, -Address, -test_and_train_ID)
+
+test_final <- test_and_train[1:884262,] %>% 
+  as.matrix()
+
+train_final <- test_and_train[884263:1762311,] %>% 
+  mutate(Category = as.numeric(train$Category)-1) %>% 
+  as.matrix()
+
+
+
+## My parameters
+param <- list("objective" = "multi:softprob",
+              "eval_metric" = "mlogloss",
+              "num_class" = 39)
+
+
+# Cross validization 
+cv.nround <- 200
+cv.nfold <- 7
+
+xgboost_cv = xgb.cv(param=param, data = train_final[, -c(21)], label = train_final[, c(21)], nfold = cv.nfold, nrounds = cv.nround)
+
+
+# Need to inspect this closely
+plot(xgboost_cv$train.mlogloss.mean, xgboost_cv$test.mlogloss.mean)
+
+# Too many outliers
+xgboost_cv_n_outliers <- xgboost_cv %>% filter(train.mlogloss.mean < 2.2)
+plot(xgboost_cv_n_outliers$train.mlogloss.mean, xgboost_cv_n_outliers$test.mlogloss.mean)
+# looks like 2.5 is about where the relationship starts flattening out
+
+
+
+# xgboost model
+nround  = 55
+xgboost_model <- xgboost(param =param, data = train_final[, -c(21)], label = train_final[, c(21)], nrounds=nround)
+
+xgb.save(xgboost_model, 'xgboost_model_27')
+
+# [0]	train-mlogloss:3.084693
+# [1]	train-mlogloss:2.899164
+# ...
+# [31]	train-mlogloss:2.315538
+# [32]	train-mlogloss:2.312935
+# [33]	train-mlogloss:2.310417
+# [34]	train-mlogloss:2.308016
+
+
+# Compute feature importance matrix
+names <- dimnames(train_final)[[2]]
+importance_matrix <- xgb.importance(names, model = xgboost_model)
+
+write.csv(importance_matrix, "./importance_matrix_27.csv")
+
+# Plotting
+xgb.plot.importance(importance_matrix)
+
+
+
+# Predict
+pred <- predict(xgboost_model, test_final)
+
+prob <- matrix(pred, ncol = 39, byrow = T)
+prob <- as.data.frame(prob)
+colnames(prob)  <- c(levels(train$Category))
+prob = format(prob, digits=2,scientific=F)
+
+prob$Id <- test$Id
+write.csv(prob,file = "dh_submission_27.csv",row.names = FALSE,quote = F)
+
+# 2.35488, You improved on your best score by 0.00949.  
+# Very small incremental improvement over 22
+
+
+
+
+
 #### Model 26.0 ####
 # I'm going to pause on address featurization and instead engineer more basic features
 # Like maybe an address_score and a log of both street and address scores
