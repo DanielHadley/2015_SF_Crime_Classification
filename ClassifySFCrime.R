@@ -200,7 +200,7 @@ rm(date_and_time)
 
 
 
-### Add in the logodds of addresses 
+## Add in the logodds of addresses 
 # We will use this table as a feature in the model
 C_counts = train %>% group_by(Category) %>% summarise(n=n())
 A_C_counts = train %>% group_by(Address, Category) %>% summarise(n=n())
@@ -240,7 +240,7 @@ test_and_train <- merge(test_and_train, log_table, by = "Address", all.x = T)
 
 # Create a df of default logodds to merge with a subset of test_and_train that is missing 
 default_logodds_df <- data.frame(t(default_logodds))
-colnames(default_logodds_df) <- colnames(test_and_train2)[28:66]
+colnames(default_logodds_df) <- colnames(test_and_train)[28:66]
 default_logodds_df$var_to_combine <- 4321
 
 # These are the problem ones with addresses that are in test but not train
@@ -303,25 +303,24 @@ param <- list("objective" = "multi:softprob",
               "num_class" = 39)
 
 
-# Cross validization 
-cv.nround <- 50
-cv.nfold <- 5
-
-xgboost_cv = xgb.cv(param=param, data = train_final[, -c(64)], label = train_final[, c(64)], nfold = cv.nfold, nrounds = cv.nround)
-
-
-# Need to inspect this closely
-plot(xgboost_cv$train.mlogloss.mean, xgboost_cv$test.mlogloss.mean)
-
-# Too many outliers
-xgboost_cv_n_outliers <- xgboost_cv %>% filter(train.mlogloss.mean < 2.2)
-plot(xgboost_cv_n_outliers$train.mlogloss.mean, xgboost_cv_n_outliers$test.mlogloss.mean)
-# looks like 2.5 is about where the relationship starts flattening out
+# # Cross validization 
+# cv.nround <- 50
+# cv.nfold <- 5
+# 
+# xgboost_cv = xgb.cv(param=param, data = train_final[, -c(64)], label = train_final[, c(64)], nfold = cv.nfold, nrounds = cv.nround)
+# 
+# 
+# # Need to inspect this closely
+# plot(xgboost_cv$train.mlogloss.mean, xgboost_cv$test.mlogloss.mean)
+# 
+# # Too many outliers
+# xgboost_cv_n_outliers <- xgboost_cv %>% filter(train.mlogloss.mean < 2.2)
+# plot(xgboost_cv_n_outliers$train.mlogloss.mean, xgboost_cv_n_outliers$test.mlogloss.mean)
 
 
 
 # xgboost model
-nround  = 25
+nround  = 15
 xgboost_model <- xgboost(param = param, data = train_final[, -c(64)], label = train_final[, c(64)], nrounds=nround)
 
 xgb.save(xgboost_model, 'xgboost_model_28')
