@@ -198,74 +198,111 @@ rm(date_and_time)
 
 
 
-## Add in the logodds of addresses 
+### Log-odds was a problem, so I'm going to try and see if counts work ###
+## Add in the counts of crimes / address 
 # We will use this table as a feature in the model
-C_counts = train %>% group_by(Category) %>% summarise(n=n())
 A_C_counts = train %>% group_by(Address, Category) %>% summarise(n=n())
-A_counts = train %>% group_by(Address) %>% summarise(n=n())
-default_logodds = log(C_counts$n / nrow(train)) - log(1 - (C_counts$n / nrow(train)))
 
 table <- spread(A_C_counts, Category, n)
 table[is.na(table)] <- 0
-prob_m <- apply(table[2:40], 1, function(x) x / sum(x))
-prob_table <- (data.frame(t(prob_m)))
-
-log_m <- apply(prob_table, 1, function(x) log(x))
-log_m[is.infinite(log_m)] <- 0
-log_table <- (data.frame(t(log_m)))
 
 
-# These are ones where there was only one categroy at that address
-# Or where there were none and so the odds are 0
-# We replace both kinds with the default logodds
-for (r in 1:nrow(log_table)) {
-  for (c in 1:ncol(log_table)) {
-    log_table[r,c] <- ifelse(log_table[r,c] == 0 | log_table[r,c] == 1, default_logodds[c], log_table[r,c])
-  }
-  
-}
-
-
-log_table$Address <- A_counts$Address
-
-rm(A_counts, A_C_counts, C_counts, log_m, prob_m, prob_table, table)
-
-
-# Put the log odds into the df
+# Put the counts into the df
 # This first line puts them all in, but there are about 3k that don't have log odds 
 # Because they are in test but not train
-test_and_train <- merge(test_and_train, log_table, by = "Address", all.x = T)
+all_addresses <- test_and_train %>% group_by(Address) %>% summarise(n=n())
 
-# Create a df of default logodds to merge with a subset of test_and_train that is missing 
-default_logodds_df <- data.frame(t(default_logodds))
-colnames(default_logodds_df) <- colnames(test_and_train)[28:66]
-default_logodds_df$var_to_combine <- 4321
+all_counts <- merge(all_addresses, table, by = "Address", all.x = T)
 
-# These are the problem ones with addresses that are in test but not train
-need_replacement <- test_and_train %>% 
-  filter(is.na(ASSAULT)) %>% 
-  select(-ARSON : - WEAPON.LAWS) %>% 
-  mutate(var_to_combine = rep(4321))
+# Now for those 3,000 + addresses that are only in test, I will just replace the NA with the median from the column
+# TODO: some thing more sophisticated that reflects the total from that address
+replace_na_in_test = function(x){
+  x<-as.numeric(as.character(x)) #first convert each column into numeric if it is from factor
+  x[is.na(x)] =median(x, na.rm=TRUE) #convert the item with NA to median value from the column
+  x #display the column
+}
 
-# Add in the defaults
-need_replacement <- merge(need_replacement, default_logodds_df, by = "var_to_combine") %>% 
-  select(-var_to_combine)
-
-# Now take out the problem ones
-test_and_train <- test_and_train %>% filter(!is.na(ASSAULT))
-
-# And add them back in with the defaults
-test_and_train <- rbind(test_and_train, need_replacement) %>% 
-  arrange(test_and_train_ID)
-
-# Save for use later
-log_table_address_frequencies <- test_and_train %>% 
-  select(test_and_train_ID, ARSON : WEAPON.LAWS)
-
-write.csv(log_table_address_frequencies, "./log_table_address_frequencies.csv")
+all_counts_final <- data.frame(apply(all_counts, 2, replace_na_in_test))
 
 
-rm(need_replacement, log_table, default_logodds_df, default_logodds, log_table_address_frequencies)
+all_counts_final$Address <- all_counts$Address
+all_counts_final <- select(all_counts_final, -n)
+
+# Merge back in
+test_and_train <- merge(test_and_train, all_counts_final)
+
+rm(all_counts, all_counts_final, table, all_addresses, A_C_counts)
+
+
+
+# ## Add in the logodds of addresses 
+# # We will use this table as a feature in the model
+# C_counts = train %>% group_by(Category) %>% summarise(n=n())
+# A_C_counts = train %>% group_by(Address, Category) %>% summarise(n=n())
+# A_counts = train %>% group_by(Address) %>% summarise(n=n())
+# default_logodds = log(C_counts$n / nrow(train)) - log(1 - (C_counts$n / nrow(train)))
+# 
+# table <- spread(A_C_counts, Category, n)
+# table[is.na(table)] <- 0
+# prob_m <- apply(table[2:40], 1, function(x) x / sum(x))
+# prob_table <- (data.frame(t(prob_m)))
+# 
+# log_m <- apply(prob_table, 1, function(x) log(x))
+# log_m[is.infinite(log_m)] <- 0
+# log_table <- (data.frame(t(log_m)))
+# 
+# 
+# # These are ones where there was only one categroy at that address
+# # Or where there were none and so the odds are 0
+# # We replace both kinds with the default logodds
+# for (r in 1:nrow(log_table)) {
+#   for (c in 1:ncol(log_table)) {
+#     log_table[r,c] <- ifelse(log_table[r,c] == 0 | log_table[r,c] == 1, default_logodds[c], log_table[r,c])
+#   }
+#   
+# }
+# 
+# 
+# log_table$Address <- A_counts$Address
+# 
+# rm(A_counts, A_C_counts, C_counts, log_m, prob_m, prob_table, table)
+# 
+# 
+# # Put the log odds into the df
+# # This first line puts them all in, but there are about 3k that don't have log odds 
+# # Because they are in test but not train
+# test_and_train <- merge(test_and_train, log_table, by = "Address", all.x = T)
+# 
+# # Create a df of default logodds to merge with a subset of test_and_train that is missing 
+# default_logodds_df <- data.frame(t(default_logodds))
+# colnames(default_logodds_df) <- colnames(test_and_train)[28:66]
+# default_logodds_df$var_to_combine <- 4321
+# 
+# # These are the problem ones with addresses that are in test but not train
+# need_replacement <- test_and_train %>% 
+#   filter(is.na(ASSAULT)) %>% 
+#   select(-ARSON : - WEAPON.LAWS) %>% 
+#   mutate(var_to_combine = rep(4321))
+# 
+# # Add in the defaults
+# need_replacement <- merge(need_replacement, default_logodds_df, by = "var_to_combine") %>% 
+#   select(-var_to_combine)
+# 
+# # Now take out the problem ones
+# test_and_train <- test_and_train %>% filter(!is.na(ASSAULT))
+# 
+# # And add them back in with the defaults
+# test_and_train <- rbind(test_and_train, need_replacement) %>% 
+#   arrange(test_and_train_ID)
+# 
+# # Save for use later
+# log_table_address_frequencies <- test_and_train %>% 
+#   select(test_and_train_ID, ARSON : WEAPON.LAWS)
+# 
+# write.csv(log_table_address_frequencies, "./log_table_address_frequencies.csv")
+# 
+# 
+# rm(need_replacement, log_table, default_logodds_df, default_logodds, log_table_address_frequencies)
 
 
 
