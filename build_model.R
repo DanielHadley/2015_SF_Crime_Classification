@@ -71,11 +71,19 @@ plot(xgboost_cv$train.mlogloss.mean, xgboost_cv$test.mlogloss.mean)
 xgboost_cv_n_outliers <- xgboost_cv %>% filter(train.mlogloss.mean < 2.2)
 plot(xgboost_cv_n_outliers$train.mlogloss.mean, xgboost_cv_n_outliers$test.mlogloss.mean)
 
+# [0]	train-mlogloss:2.962582+0.001128	test-mlogloss:2.966109+0.002168
+# [1]	train-mlogloss:2.775106+0.001063	test-mlogloss:2.781634+0.002613
+# [2]	train-mlogloss:2.652626+0.000857	test-mlogloss:2.661122+0.002596
+# ...
+# [71]	train-mlogloss:2.058685+0.001238	test-mlogloss:2.189235+0.002995
+# [72]	train-mlogloss:2.056966+0.001292	test-mlogloss:2.188937+0.002973
+# [73]	train-mlogloss:2.055132+0.001361	test-mlogloss:2.188597+0.003000
+# [74]	train-mlogloss:2.053324+0.001287	test-mlogloss:2.188201+0.003045
 
 
 # xgboost model
-nround  = 30
-xgboost_model <- xgboost(param = param, data = train_final[, -c(64)], label = train_final[, c(64)], nrounds=nround)
+nround  = 70
+xgboost_model <- xgboost(param = param, data = train_final[, -c(25)], label = train_final[, c(25)], nrounds=nround)
 
 xgb.save(xgboost_model, 'xgboost_model_29')
 
@@ -102,6 +110,9 @@ prob$Id <- as.numeric(seq(1 : 884262) -1)
 prob = format(prob, digits=2,scientific=F)
 
 write.csv(prob,file = "dh_submission_29.csv",row.names = FALSE,quote = F)
+
+# Wow, even better than expected: 2.19727
+# 19 / 2155
 
 
 
