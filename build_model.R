@@ -17,6 +17,73 @@ test_and_train <- read.csv("./test_and_train.csv")
 
 
 
+#### Model 30 ####
+
+## My parameters
+param <- list("objective" = "binary:logistic",
+              "eval_metric" = "logloss")
+
+nround  = 1
+
+
+crime_categories <- c(levels(test_and_train$Category))
+
+final_predictions <- data_frame(as.numeric(seq(1 : 884262) -1))
+colnames(final_predictions)[1] <- "Id"
+
+for (crime in 1:2) {
+  
+  category_to_model <- crime_categories[crime]
+  
+  # Get it ready for the model
+  test_and_train_final <- test_and_train %>%
+    
+    # Drop the address features
+    select(-ARSON : -WEAPON.LAWS) %>%
+    mutate(DayOfWeek = as.numeric(DayOfWeek)-1,
+           PdDistrict = as.numeric(PdDistrict)-1,
+           X = as.numeric(X)-1,
+           Y = as.numeric(Y)-1,
+           Hour = as.numeric(Hour)-1,
+           Year = as.numeric(Year)-1,
+           Month = as.numeric(Month)-1,
+           Day = as.numeric(Day)-1,
+           street_scale = as.numeric(street_scale)-1,
+           Cluster = as.numeric(Cluster)-1) %>%
+    
+    mutate(category_binary = ifelse(Category == category_to_model, 1, 0)) %>% 
+    
+    arrange(test_and_train_ID) %>% 
+    select(-Dates, -Address, -test_and_train_ID, -Category)
+  
+  
+  test_final <- test_and_train_final[1:884262,] %>% 
+    select(-category_binary) %>% 
+    as.matrix()
+  
+  train_final <- test_and_train_final[884263:1762311,] %>% 
+    as.matrix()
+  
+  xgboost_model <- xgboost(param = param, data = train_final[, -c(25)], label = train_final[, c(25)], nrounds=nround)
+  
+  # Predict
+  pred <- predict(xgboost_model, test_final)
+  
+  prob <- matrix(pred, ncol = 1, byrow = T)
+  prob <- as.data.frame(prob)
+  colnames(prob)  <- category_to_model
+  prob$Id <- as.numeric(seq(1 : 884262) -1)
+
+  final_predictions[,crime + 1] <- prob[,1]
+  colnames(final_predictions)[crime  + 1] <- category_to_model
+  
+  write.csv(final_predictions, file = paste("./submission_30/final_predictions_", crime, ".csv", sep=""),row.names = FALSE,quote = F)
+  
+}
+
+
+
+
 #### Model 29 ####
 # Drop the address features
 
