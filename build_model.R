@@ -14,6 +14,151 @@ set.seed(543)
 
 
 
+#### Model 36 ####
+# A for loop to iterate through each category and build a seperate model
+# But first a for loop to do cross validation on each
+# Take the address features back out, probably for good
+# dates_numeric is doing well
+# hopefully this will avoid overfitting
+# and added early stop round
+
+
+test_and_train <- read.csv("./test_and_train_34.csv")
+
+
+# The list to iterate over
+crime_categories <- c(levels(test_and_train$Category))
+
+## My parameters
+param <- list("objective" = "binary:logistic",
+              "eval_metric" = "logloss")
+
+length(crime_categories)
+
+for (crime in 1:1) {
+  
+  category_to_model <- crime_categories[crime]
+  
+  # Get it ready for the model
+  test_and_train_final <- test_and_train %>%
+    
+    # Drop the address features
+    select(-ARSON : -WEAPON.LAWS) %>%
+    mutate(DayOfWeek = as.numeric(DayOfWeek)-1,
+           PdDistrict = as.numeric(PdDistrict)-1,
+           X = as.numeric(X)-1,
+           Y = as.numeric(Y)-1,
+           Hour = as.numeric(Hour)-1,
+           Year = as.numeric(Year)-1,
+           Month = as.numeric(Month)-1,
+           Day = as.numeric(Day)-1,
+           street_scale = as.numeric(street_scale)-1,
+           Cluster = as.numeric(Cluster)-1) %>%
+    
+    mutate(category_binary = ifelse(Category == category_to_model, 1, 0)) %>% 
+    
+    arrange(test_and_train_ID) %>% 
+    select(-Dates, -Address, -test_and_train_ID, -Category)
+  
+  
+  test_final <- test_and_train_final[1:884262,] %>% 
+    select(-category_binary) %>% 
+    as.matrix()
+  
+  train_final <- test_and_train_final[884263:1762311,] %>% 
+    as.matrix()
+  
+  # Cross validization 
+  cv.nround <- 100
+  cv.nfold <- 5
+  
+  xgboost_cv = xgb.cv(param=param, data = train_final[, -c(27)], label = train_final[, c(27)], 
+                      nfold = cv.nfold, nrounds = cv.nround, early.stop.round = 5)
+  
+  write.csv(xgboost_cv, file = paste("./submission_36/cv_", crime, ".csv", sep=""),row.names = FALSE,quote = F)
+  
+  # Need to inspect this closely
+  plot(xgboost_cv$train.mlogloss.mean, xgboost_cv$test.mlogloss.mean)
+  
+  jpeg(file = paste("./submission_36/plot_cv_", crime, ".jpg", sep=""))
+  
+  # Too many outliers
+  xgboost_cv_n_outliers <- xgboost_cv %>% filter(train.mlogloss.mean < 2.2)
+  plot(xgboost_cv_n_outliers$train.mlogloss.mean, xgboost_cv_n_outliers$test.mlogloss.mean)
+  
+  jpeg(file = paste("./submission_36/plot_cv_", crime, ".jpg", sep=""))
+  
+}
+
+
+
+### Now build the models
+
+nround  = 70
+
+
+final_predictions <- data_frame(as.numeric(seq(1 : 884262) -1))
+colnames(final_predictions)[1] <- "Id"
+
+for (crime in 1:length(crime_categories)) {
+  
+  category_to_model <- crime_categories[crime]
+  
+  # Get it ready for the model
+  test_and_train_final <- test_and_train %>%
+    
+    # Drop the address features
+    select(-ARSON : -WEAPON.LAWS) %>%
+    mutate(DayOfWeek = as.numeric(DayOfWeek)-1,
+           PdDistrict = as.numeric(PdDistrict)-1,
+           X = as.numeric(X)-1,
+           Y = as.numeric(Y)-1,
+           Hour = as.numeric(Hour)-1,
+           Year = as.numeric(Year)-1,
+           Month = as.numeric(Month)-1,
+           Day = as.numeric(Day)-1,
+           street_scale = as.numeric(street_scale)-1,
+           Cluster = as.numeric(Cluster)-1) %>%
+    
+    mutate(category_binary = ifelse(Category == category_to_model, 1, 0)) %>% 
+    
+    arrange(test_and_train_ID) %>% 
+    select(-Dates, -Address, -test_and_train_ID, -Category)
+  
+  
+  test_final <- test_and_train_final[1:884262,] %>% 
+    select(-category_binary) %>% 
+    as.matrix()
+  
+  train_final <- test_and_train_final[884263:1762311,] %>% 
+    as.matrix()
+  
+  xgboost_model <- xgboost(param = param, data = train_final[, -c(25)], label = train_final[, c(25)], nrounds=nround)
+  
+  # Predict
+  pred <- predict(xgboost_model, test_final)
+  
+  prob <- matrix(pred, ncol = 1, byrow = T)
+  prob <- as.data.frame(prob)
+  colnames(prob)  <- category_to_model
+  prob$Id <- as.numeric(seq(1 : 884262) -1)
+  
+  final_predictions[,crime + 1] <- prob[,1]
+  colnames(final_predictions)[crime  + 1] <- category_to_model
+  
+  write.csv(final_predictions, file = paste("./submission_30/final_predictions_", crime, ".csv", sep=""),row.names = FALSE,quote = F)
+  
+}
+
+final_predictions = format(final_predictions, digits=2,scientific=F)
+
+write.csv(final_predictions,file = "dh_submission_36.csv",row.names = FALSE,quote = F)
+
+
+
+
+
+
 #### Model 35 ####
 # Take the address features back out, probably for good
 # dates_numeric is doing well
@@ -437,6 +582,8 @@ write.csv(prob,file = "dh_submission_32.csv",row.names = FALSE,quote = F)
 
 
 #### Model 30 ####
+
+# A for loop to iterate through each category and build a seperate model
 
 test_and_train <- read.csv("./test_and_train.csv")
 
