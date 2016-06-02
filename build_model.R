@@ -14,8 +14,218 @@ set.seed(543)
 
 
 
-#### Model 33 ####
+#### Model 35 ####
+# Take the address features back out, probably for good
+# dates_numeric is doing well
+# hopefully this will avoid overfitting
+# and added early stop round
+
+test_and_train <- read.csv("./test_and_train_35.csv")
+
+
+# Get it ready for the model
+test_and_train_final <- test_and_train %>%
+  
+  # Drop the address features
+  select(-ARSON : -WEAPON.LAWS) %>% 
+  
+  mutate(DayOfWeek = as.numeric(DayOfWeek)-1,
+         PdDistrict = as.numeric(PdDistrict)-1,
+         X = as.numeric(X)-1,
+         Y = as.numeric(Y)-1,
+         Hour = as.numeric(Hour)-1,
+         Year = as.numeric(Year)-1,
+         Month = as.numeric(Month)-1,
+         Day = as.numeric(Day)-1,
+         street_scale = as.numeric(street_scale)-1,
+         Cluster = as.numeric(Cluster)-1) %>%
+  arrange(test_and_train_ID) %>% 
+  select(-Dates, -Address, -test_and_train_ID)
+
+
+test_final <- test_and_train_final[1:884262,] %>% 
+  select(-Category) %>% 
+  as.matrix()
+
+train_final <- test_and_train_final[884263:1762311,] %>% 
+  mutate(Category = as.numeric(Category)-1) %>% 
+  as.matrix()
+
+
+
+## My parameters
+param <- list("objective" = "multi:softprob",
+              "eval_metric" = "mlogloss",
+              "num_class" = 39)
+
+
+
+# Cross validization 
+cv.nround <- 75
+cv.nfold <- 5
+
+xgboost_cv = xgb.cv(param=param, data = train_final[, -c(27)], label = train_final[, c(27)], 
+                    nfold = cv.nfold, nrounds = cv.nround, early.stop.round = 5)
+
+
+# Need to inspect this closely
+plot(xgboost_cv$train.mlogloss.mean, xgboost_cv$test.mlogloss.mean)
+
+# Too many outliers
+xgboost_cv_n_outliers <- xgboost_cv %>% filter(train.mlogloss.mean < 2.2)
+plot(xgboost_cv_n_outliers$train.mlogloss.mean, xgboost_cv_n_outliers$test.mlogloss.mean)
+
+
+
+# xgboost model
+nround  = 75
+xgboost_model <- xgboost(param = param, data = train_final[, -c(27)], label = train_final[, c(27)], 
+                         nrounds=nround, early.stop.round = 5)
+
+# [0]	train-mlogloss:2.759556
+# [1]	train-mlogloss:2.572924
+# [2]	train-mlogloss:2.450206
+# ...
+# [72]	train-mlogloss:1.881863
+# [73]	train-mlogloss:1.880649
+# [74]	train-mlogloss:1.879466
+
+xgb.save(xgboost_model, 'xgboost_model_35')
+
+
+
+# Compute feature importance matrix
+names <- dimnames(train_final)[[2]]
+importance_matrix <- xgb.importance(names, model = xgboost_model)
+
+write.csv(importance_matrix, "./importance_matrix_35.csv")
+
+# Plotting
+xgb.plot.importance(importance_matrix)
+
+
+
+# Predict
+pred <- predict(xgboost_model, test_final)
+
+prob <- matrix(pred, ncol = 39, byrow = T)
+prob <- as.data.frame(prob)
+colnames(prob)  <- c(levels(test_and_train$Category))
+prob$Id <- as.numeric(seq(1 : 884262) -1)
+prob = format(prob, digits=2,scientific=F)
+
+write.csv(prob,file = "dh_submission_35.csv",row.names = FALSE,quote = F)
+
+
+
+
+
+#### Model 34 ####
 # Add the address features back in with calculations based on a random sample
+# hopefully this will avoid overfitting
+# and added early stop round
+
+test_and_train <- read.csv("./test_and_train_34.csv")
+
+
+# Get it ready for the model
+test_and_train_final <- test_and_train %>%
+  
+  mutate(DayOfWeek = as.numeric(DayOfWeek)-1,
+         PdDistrict = as.numeric(PdDistrict)-1,
+         X = as.numeric(X)-1,
+         Y = as.numeric(Y)-1,
+         Hour = as.numeric(Hour)-1,
+         Year = as.numeric(Year)-1,
+         Month = as.numeric(Month)-1,
+         Day = as.numeric(Day)-1,
+         street_scale = as.numeric(street_scale)-1,
+         Cluster = as.numeric(Cluster)-1) %>%
+  arrange(test_and_train_ID) %>% 
+  select(-Dates, -Address, -test_and_train_ID)
+
+
+test_final <- test_and_train_final[1:884262,] %>% 
+  select(-Category) %>% 
+  as.matrix()
+
+train_final <- test_and_train_final[884263:1762311,] %>% 
+  mutate(Category = as.numeric(Category)-1) %>% 
+  as.matrix()
+
+
+
+## My parameters
+param <- list("objective" = "multi:softprob",
+              "eval_metric" = "mlogloss",
+              "num_class" = 39)
+
+
+
+# Cross validization 
+cv.nround <- 75
+cv.nfold <- 5
+
+xgboost_cv = xgb.cv(param=param, data = train_final[, -c(66)], label = train_final[, c(66)], 
+                    nfold = cv.nfold, nrounds = cv.nround, early.stop.round = 5)
+
+
+# Need to inspect this closely
+plot(xgboost_cv$train.mlogloss.mean, xgboost_cv$test.mlogloss.mean)
+
+# Too many outliers
+xgboost_cv_n_outliers <- xgboost_cv %>% filter(train.mlogloss.mean < 2.2)
+plot(xgboost_cv_n_outliers$train.mlogloss.mean, xgboost_cv_n_outliers$test.mlogloss.mean)
+
+
+
+# xgboost model
+nround  = 75
+xgboost_model <- xgboost(param = param, data = train_final[, -c(66)], label = train_final[, c(66)], 
+                         nrounds=nround, early.stop.round = 5)
+
+# [0]	train-mlogloss:2.759556
+# [1]	train-mlogloss:2.572924
+# [2]	train-mlogloss:2.450206
+# ...
+# [72]	train-mlogloss:1.881863
+# [73]	train-mlogloss:1.880649
+# [74]	train-mlogloss:1.879466
+
+xgb.save(xgboost_model, 'xgboost_model_34')
+
+
+
+# Compute feature importance matrix
+names <- dimnames(train_final)[[2]]
+importance_matrix <- xgb.importance(names, model = xgboost_model)
+
+write.csv(importance_matrix, "./importance_matrix_34.csv")
+
+# Plotting
+xgb.plot.importance(importance_matrix)
+
+
+
+# Predict
+pred <- predict(xgboost_model, test_final)
+
+prob <- matrix(pred, ncol = 39, byrow = T)
+prob <- as.data.frame(prob)
+colnames(prob)  <- c(levels(test_and_train$Category))
+prob$Id <- as.numeric(seq(1 : 884262) -1)
+prob = format(prob, digits=2,scientific=F)
+
+write.csv(prob,file = "dh_submission_34.csv",row.names = FALSE,quote = F)
+
+# So bizarre. There is just no way to reliably use these features. Maybe I will try one last time with most of the data held out. 
+# Your submission scored 2.15111, which is not an improvement of your best score. Keep trying!
+
+
+
+
+#### Model 33 ####
+# Address features out, but other new features in
 # hopefully this will avoid overfitting
 # and added early stop round
 
