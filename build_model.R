@@ -296,7 +296,8 @@ for (crime in 1:length(crime_categories)) {
 
 final_predictions = format(final_predictions, digits=2,scientific=F)
 
-write.csv(final_predictions,file = "dh_submission_36.csv",row.names = FALSE,quote = F)
+write.csv(final_predictions,file = "dh_submission_36.csv", row.names = FALSE,quote = F)
+# Interesting: it barely budged: 2.10518 You made the top ten by improving your score by 0.00698. 
 
 
 
