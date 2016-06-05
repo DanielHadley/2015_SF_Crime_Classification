@@ -105,9 +105,7 @@ for (crime in 1:length(crime_categories)) {
   
   # Get it ready for the model
   test_and_train_final <- test_and_train %>%
-    
-    # Drop the address features
-    select(-ARSON : -WEAPON.LAWS) %>%
+
     mutate(DayOfWeek = as.numeric(DayOfWeek)-1,
            PdDistrict = as.numeric(PdDistrict)-1,
            X = as.numeric(X)-1,
